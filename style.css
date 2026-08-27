@@ -1,0 +1,791 @@
+/* ===== Overlay / sheet ===== */
+.ts-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    background: var(--black70a, rgba(0, 0, 0, 0.7));
+    backdrop-filter: blur(4px);
+}
+
+/* --ts-* defaults; themes.js may override them inline on the sheet root. */
+.ts-sheet {
+    --ts-sheet-bg: var(--SmartThemeBlurTintColor, #1b1b1b);
+    --ts-head-bg: transparent;
+    --ts-log-bg: transparent;
+    --ts-fg: var(--SmartThemeBodyColor, #ddd);
+    --ts-border: var(--SmartThemeBorderColor, #444);
+    --ts-mine-bg: var(--SmartThemeQuoteColor, #4a7dbd);
+    --ts-mine-fg: #fff;
+    --ts-theirs-bg: var(--SmartThemeUserMesBlurTintColor, rgba(255, 255, 255, 0.1));
+    --ts-theirs-fg: inherit;
+    --ts-theirs-border: var(--SmartThemeBorderColor, #444);
+    --ts-meta-fg: currentColor;
+    --ts-compose-bg: var(--black30a, rgba(0, 0, 0, 0.3));
+    --ts-send-bg: var(--SmartThemeQuoteColor, #4a7dbd);
+
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 620px;
+    /* Overridden by JS with window.innerHeight (mobile address bar). */
+    height: 100%;
+    background: var(--ts-sheet-bg);
+    color: var(--ts-fg);
+    overflow: hidden;
+}
+
+/* ── Header ───────────────────────────────── */
+.ts-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--ts-head-bg);
+    border-bottom: 1px solid var(--ts-border);
+    flex: 0 0 auto;
+}
+
+.ts-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: 0 0 auto;
+}
+
+.ts-avatar-blank {
+    background: var(--ts-border);
+}
+
+.ts-head-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.ts-head-name {
+    font-weight: 600;
+    font-size: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── In-story clock ───────────────────────── */
+.ts-head-time {
+    align-self: flex-start;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 0.72rem;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.ts-head-time:disabled {
+    cursor: default;
+}
+
+.ts-head-time:active:not(:disabled) {
+    opacity: 1;
+}
+
+/* ── Time adjustment popup ────────────────── */
+.ts-time-box {
+    max-width: 420px;
+}
+
+.ts-time-current {
+    text-align: center;
+    padding: 10px 0 4px;
+}
+
+.ts-time-clock {
+    font-size: 1.6rem;
+    font-weight: 600;
+}
+
+.ts-time-gap {
+    font-size: 0.8rem;
+    opacity: 0.6;
+    margin-top: 3px;
+}
+
+.ts-time-steps {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+.ts-btn-mini2 {
+    flex: 1 1 auto;
+    min-width: 64px;
+    padding: 8px 6px;
+    font-size: 0.8rem;
+}
+
+.ts-time-input {
+    width: 100%;
+    font-size: 16px;
+}
+
+.ts-readonly-tag {
+    font-size: 0.68rem;
+    font-weight: normal;
+    opacity: 0.6;
+    border: 1px solid var(--ts-border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+.ts-icon-btn {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 1.05rem;
+    min-width: 40px;
+    min-height: 40px;
+    cursor: pointer;
+    border-radius: 8px;
+    opacity: 0.85;
+}
+
+.ts-icon-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.ts-icon-btn:active {
+    background: var(--white20a, rgba(255, 255, 255, 0.12));
+}
+
+/* ── Chat log ─────────────────────────────── */
+.ts-log {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--ts-log-bg);
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.ts-empty {
+    margin: auto;
+    text-align: center;
+    opacity: 0.5;
+    font-size: 0.9rem;
+    line-height: 1.7;
+    padding: 20px;
+}
+
+/* ── Date divider ─────────────────────────── */
+.ts-date-divider {
+    align-self: center;
+    margin: 14px 0 10px;
+    max-width: 90%;
+}
+
+.ts-date-divider span {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    color: var(--ts-meta-fg);
+    background: var(--ts-theirs-bg);
+    border: 1px solid var(--ts-theirs-border);
+}
+
+.ts-gap-note {
+    align-self: center;
+    margin: 12px 0 6px;
+    font-size: 0.66rem;
+    color: var(--ts-meta-fg);
+    opacity: 0.55;
+    letter-spacing: 0.02em;
+}
+
+/* Boundary marking how far messages have been handed off to RP. */
+.ts-commit-line {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 16px 0 12px;
+    font-size: 0.68rem;
+    color: var(--ts-meta-fg);
+    opacity: 0.7;
+}
+
+.ts-commit-line::before,
+.ts-commit-line::after {
+    content: '';
+    flex: 1 1 auto;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.35;
+}
+
+.ts-date-divider + .ts-row {
+    margin-top: 0;
+}
+
+.ts-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    max-width: 100%;
+    /* Suppress the long-press select/magnify callout. */
+    -webkit-touch-callout: none;
+    user-select: none;
+}
+
+.ts-row-user {
+    flex-direction: row-reverse;
+    align-self: flex-end;
+}
+
+.ts-row-char {
+    align-self: flex-start;
+}
+
+/* Consecutive bubbles from the same sender group tighter. */
+.ts-row + .ts-row {
+    margin-top: 0;
+}
+
+.ts-row-user + .ts-row-char,
+.ts-row-char + .ts-row-user {
+    margin-top: 10px;
+}
+
+.ts-bubble {
+    max-width: min(78%, 460px);
+    padding: 8px 12px;
+    border-radius: 16px;
+    line-height: 1.45;
+    font-size: 0.95rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.ts-bubble-user {
+    background: var(--ts-mine-bg);
+    color: var(--ts-mine-fg);
+    border-bottom-right-radius: 5px;
+}
+
+.ts-bubble-char {
+    background: var(--ts-theirs-bg);
+    color: var(--ts-theirs-fg);
+    border: 1px solid var(--ts-theirs-border);
+    border-bottom-left-radius: 5px;
+}
+
+.ts-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    flex: 0 0 auto;
+    padding-bottom: 2px;
+}
+
+.ts-row-user .ts-meta {
+    align-items: flex-start;
+}
+
+.ts-time {
+    font-size: 0.68rem;
+    color: var(--ts-meta-fg);
+    opacity: 0.75;
+}
+
+.ts-unread {
+    font-size: 0.66rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--ts-mine-bg);
+    opacity: 0.9;
+}
+
+/* ── Error notice ─────────────────────────── */
+.ts-issue {
+    align-self: stretch;
+    margin: 12px 0 4px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--warning, #b34a4a);
+    background: var(--black30a, rgba(0, 0, 0, 0.25));
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.ts-issue-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.ts-issue-detail {
+    opacity: 0.8;
+    word-break: break-word;
+}
+
+.ts-issue-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 9px;
+}
+
+/* ── Inline editing ───────────────────────── */
+.ts-row-editing {
+    width: 100%;
+    align-self: stretch;
+    margin: 8px 0;
+}
+
+.ts-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.ts-edit-input {
+    width: 100%;
+    resize: none;
+    border-radius: 12px;
+    padding: 9px 12px;
+    /* Under 16px iOS Safari zooms in on focus. */
+    font-size: 16px;
+    line-height: 1.45;
+    background: var(--ts-compose-bg);
+    color: inherit;
+    border: 1px solid var(--ts-mine-bg);
+    font-family: inherit;
+}
+
+.ts-edit-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.ts-edit-actions .ts-btn {
+    flex: 0 0 auto;
+    min-width: 68px;
+}
+
+/* ── Typing indicator ─────────────────────── */
+.ts-typing {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 12px 14px;
+}
+
+.ts-typing span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.4;
+    animation: ts-blink 1.3s infinite;
+}
+
+.ts-typing span:nth-child(2) { animation-delay: 0.18s; }
+.ts-typing span:nth-child(3) { animation-delay: 0.36s; }
+
+@keyframes ts-blink {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30%           { opacity: 0.9;  transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ts-typing span { animation: none; }
+}
+
+/* ── Composer ─────────────────────────────── */
+.ts-compose {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--ts-head-bg);
+    border-top: 1px solid var(--ts-border);
+    /* Clear the home indicator. */
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.ts-input {
+    flex: 1 1 auto;
+    resize: none;
+    border-radius: 18px;
+    padding: 9px 14px;
+    /* Under 16px iOS Safari zooms in on focus. */
+    font-size: 16px;
+    line-height: 1.4;
+    max-height: 140px;
+    background: var(--ts-compose-bg);
+    color: inherit;
+    border: 1px solid var(--ts-border);
+    font-family: inherit;
+}
+
+.ts-send {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    background: var(--ts-send-bg);
+    color: #fff;
+    font-size: 1rem;
+}
+
+.ts-send:active {
+    filter: brightness(1.2);
+}
+
+.ts-stop {
+    background: var(--warning, #b34a4a);
+}
+
+/* Send button doubling as "fetch reply" when the input is empty. */
+.ts-send-retry {
+    background: transparent;
+    border: 1px solid var(--ts-border);
+    color: var(--ts-fg);
+    opacity: 0.7;
+}
+
+.ts-send-retry:active {
+    opacity: 1;
+}
+
+/* ===== Bubble action menu ===== */
+.ts-menu {
+    position: absolute;
+    z-index: 5;
+    min-width: 170px;
+    padding: 5px;
+    border-radius: 10px;
+    background: var(--SmartThemeBlurTintColor, #222);
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ts-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 12px;
+    background: transparent;
+    border: none;
+    color: inherit;
+    text-align: left;
+    font-size: 0.9rem;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+.ts-menu-item:active {
+    background: var(--white20a, rgba(255, 255, 255, 0.12));
+}
+
+/* ===== Finish popup ===== */
+.ts-finish-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: var(--black70a, rgba(0, 0, 0, 0.7));
+}
+
+.ts-finish-box {
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--SmartThemeBlurTintColor, #1b1b1b);
+    color: var(--SmartThemeBodyColor, #ddd);
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+}
+
+.ts-finish-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 1.02rem;
+    margin-bottom: 14px;
+}
+
+.ts-finish-count {
+    margin-left: auto;
+    font-size: 0.78rem;
+    opacity: 0.6;
+    font-weight: normal;
+}
+
+.ts-finish-modes {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ts-mode {
+    flex: 1 1 auto;
+    min-width: 96px;
+    padding: 10px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    background: transparent;
+    color: inherit;
+    font-size: 0.86rem;
+    cursor: pointer;
+}
+
+.ts-mode.active {
+    background: var(--SmartThemeQuoteColor, #4a7dbd);
+    border-color: var(--SmartThemeQuoteColor, #4a7dbd);
+    color: #fff;
+}
+
+.ts-finish-hint {
+    font-size: 0.78rem;
+    opacity: 0.65;
+    line-height: 1.6;
+    margin: 9px 2px 14px;
+    min-height: 2.6em;
+}
+
+.ts-finish-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    opacity: 0.8;
+    margin-bottom: 5px;
+}
+
+.ts-summary-input {
+    width: 100%;
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 16px;
+    line-height: 1.5;
+    resize: vertical;
+    background: var(--black30a, rgba(0, 0, 0, 0.3));
+    color: inherit;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    font-family: inherit;
+}
+
+.ts-summary-input:disabled {
+    opacity: 0.55;
+}
+
+.ts-finish-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.ts-finish-foot-right {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+}
+
+/* ===== Shared buttons ===== */
+.ts-btn {
+    padding: 9px 15px;
+    border-radius: 8px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    background: transparent;
+    color: inherit;
+    font-size: 0.88rem;
+    cursor: pointer;
+}
+
+.ts-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.ts-btn:active:not(:disabled) {
+    background: var(--white20a, rgba(255, 255, 255, 0.12));
+}
+
+.ts-btn-primary {
+    background: var(--SmartThemeQuoteColor, #4a7dbd);
+    border-color: var(--SmartThemeQuoteColor, #4a7dbd);
+    color: #fff;
+}
+
+.ts-btn-danger {
+    border-color: var(--warning, #b34a4a);
+    color: var(--warning, #b34a4a);
+}
+
+.ts-btn-finish {
+    padding: 8px 13px;
+}
+
+.ts-btn-mini {
+    padding: 3px 9px;
+    font-size: 0.75rem;
+    margin-left: auto;
+}
+
+/* ===== Settings panel ===== */
+
+/* ── Open-transcript button in the main chat ── */
+.ts-open-history-bar {
+    margin: 6px 0 2px;
+}
+
+button.ts-open-history {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 14px;
+    font-size: 0.8rem;
+    font-family: inherit;
+    cursor: pointer;
+    color: inherit;
+    background: var(--black30a, rgba(0, 0, 0, 0.3));
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    opacity: 0.85;
+}
+
+button.ts-open-history:active {
+    opacity: 1;
+    background: var(--white20a, rgba(255, 255, 255, 0.12));
+}
+
+/* ── Theme picker ─────────────────────────── */
+.ts-theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+    gap: 8px;
+    margin: 6px 0 4px;
+}
+
+.ts-theme-card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 5px;
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    color: inherit;
+    font-family: inherit;
+}
+
+.ts-theme-card.active {
+    border-color: var(--SmartThemeQuoteColor, #4a7dbd);
+}
+
+.ts-theme-card:active {
+    transform: scale(0.97);
+}
+
+.ts-theme-preview {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    height: 54px;
+    padding: 7px;
+    border-radius: 7px;
+    border: 1px solid var(--SmartThemeBorderColor, #444);
+    overflow: hidden;
+}
+
+.ts-theme-bubble {
+    display: block;
+    height: 11px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+}
+
+.ts-theme-theirs {
+    width: 62%;
+    align-self: flex-start;
+}
+
+.ts-theme-mine {
+    width: 52%;
+    align-self: flex-end;
+}
+
+.ts-theme-name {
+    font-size: 0.72rem;
+    text-align: center;
+    opacity: 0.8;
+    line-height: 1.3;
+}
+
+.text-scene-settings .ts-note {
+    display: block;
+    opacity: 0.65;
+    line-height: 1.6;
+    margin: 3px 0 10px;
+    font-size: 0.78rem;
+}
+
+.text-scene-settings label {
+    display: block;
+    margin-top: 10px;
+    margin-bottom: 3px;
+    font-size: 0.88rem;
+}
+
+.text-scene-settings .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.ts-settings-actions {
+    margin-top: 12px;
+}
+
+/* Core .menu_button is width: min-content, and Korean breaks between characters,
+   so the label collapses to one glyph per line. */
+.text-scene-settings .menu_button {
+    width: fit-content;
+}
