@@ -240,6 +240,7 @@ function renderIssue() {
         <div class="ts-issue-detail">${escapeHtml(issue.detail)}</div>
         <div class="ts-issue-actions">
             ${issue.raw ? '<button class="ts-btn ts-btn-mini2" data-issue="raw">모델 응답 보기</button>' : ''}
+            ${issue.request ? '<button class="ts-btn ts-btn-mini2" data-issue="req">보낸 요청 보기</button>' : ''}
             <button class="ts-btn ts-btn-mini2" data-issue="dismiss">닫기</button>
         </div>
     </div>`;
@@ -252,6 +253,13 @@ function bindIssueActions(log) {
         if (act === 'dismiss') {
             S.lastIssue = null;
             rerender();
+            return;
+        }
+        if (act === 'req') {
+            const req = S.lastIssue?.request ?? '';
+            const ok = await copyToClipboard(req);
+            alert(req || '(기록 없음)');
+            if (ok && typeof toastr !== 'undefined') toastr.success('요청을 복사했어요.', '문자 씬');
             return;
         }
         if (act === 'raw') {

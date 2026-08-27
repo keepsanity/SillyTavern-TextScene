@@ -2,7 +2,6 @@
 
 import { generateRawData, extractMessageFromData } from '../../../../script.js';
 import { ConnectionManagerRequestService } from '../../../extensions/shared.js';
-import { oai_settings, reasoning_effort_types } from '../../../openai.js';
 import {
     DEBUG_PREFIX,
     REPLY_KIND,
@@ -26,6 +25,56 @@ function describeAttempt(raw) {
         + `나레이션만 왔거나 상한(${limit} 토큰)에 걸려 잘렸을 수 있어요.`;
 }
 
+const SECRET_KEYS = ['proxy_password', 'api_key', 'secret_id', 'reverse_proxy'];
+
+/**
+ * Summarises a captured generation payload: every parameter verbatim, message bodies
+ * shortened, secrets removed. This is what gets shown on the issue card.
+ */
+function summarizeRequest(body) {
+    try {
+        const data = JSON.parse(body);
+        const messages = Array.isArray(data.messages) ? data.messages : [];
+        const params = {};
+        for (const [k, v] of Object.entries(data)) {
+            if (k === 'messages') continue;
+            params[k] = SECRET_KEYS.includes(k) ? '<removed>' : v;
+        }
+        const lines = messages.map((m, i) => {
+            const text = String(m?.content ?? '');
+            const head = text.length > 300 ? text.slice(0, 300) + ` …(+${text.length - 300})` : text;
+            return `[${i}] ${m?.role}: ${head}`;
+        });
+        const br = String.fromCharCode(10);
+        return JSON.stringify(params, null, 1) + br + br
+            + '--- messages (' + messages.length + ') ---' + br + lines.join(br);
+    } catch (error) {
+        return String(body ?? '').slice(0, 4000);
+    }
+}
+
+/** Records the payload ST posts to its own backend so an empty reply can be diagnosed. */
+async function captureRequest(fn) {
+    const original = globalThis.fetch;
+    if (typeof original !== 'function') return fn();
+    let captured = '';
+    globalThis.fetch = function (input, init) {
+        try {
+            const url = typeof input === 'string' ? input : (input?.url ?? '');
+            if (url.includes('chat-completions/generate') && init?.body) captured = String(init.body);
+        } catch (error) {
+            // Never let instrumentation break the request.
+        }
+        return original.apply(this, arguments);
+    };
+    try {
+        return await fn();
+    } finally {
+        globalThis.fetch = original;
+        S.lastRequest = captured ? summarizeRequest(captured) : '';
+    }
+}
+
 /** sendRequest gives { content, reasoning } when extractData=true. */
 function extractContent(result) {
     if (typeof result === 'string') return result;
@@ -33,26 +82,6 @@ function extractContent(result) {
         return result.content;
     }
     return '';
-}
-
-// Pins reasoning to its lowest tier for one call, then restores it. 'auto' sends no
-// thinking parameter at all, which leaves adaptive models thinking on their own default
-// until the token cap is gone and no body is written.
-async function withMinimalReasoning(fn) {
-    const prevEffort = oai_settings?.reasoning_effort;
-    const prevShow = oai_settings?.show_thoughts;
-    try {
-        if (oai_settings) {
-            oai_settings.reasoning_effort = reasoning_effort_types.min;
-            oai_settings.show_thoughts = false;
-        }
-        return await fn();
-    } finally {
-        if (oai_settings) {
-            oai_settings.reasoning_effort = prevEffort;
-            oai_settings.show_thoughts = prevShow;
-        }
-    }
 }
 
 /**
@@ -70,8 +99,8 @@ async function dispatch(messages, maxTokens, signal) {
                 messages,
                 maxTokens,
                 { stream: false, signal: signal ?? null, extractData: true },
-                // Lowest reasoning tier; 'auto' lets adaptive models spend the whole cap thinking.
-                { reasoning_effort: reasoning_effort_types.min, include_reasoning: false },
+                // No reasoning override: the profile's own settings are what the main chat
+                // uses successfully, and diverging from them produced empty completions.
             );
             return extractContent(result);
         } catch (error) {
@@ -86,12 +115,12 @@ async function dispatch(messages, maxTokens, signal) {
 
     // generateRawData, not generateRaw: cleanUpMessage strips stop-sequence strings from
     // the body, which would delete the bubble separator and run sentences together.
-    const data = await withMinimalReasoning(() => generateRawData({
+    const data = await generateRawData({
         prompt: messages,
         responseLength: maxTokens,
         instructOverride: true,
         quietToLoud: true,
-    }));
+    });
     return extractMessageFromData(data);
 }
 
@@ -105,7 +134,7 @@ export async function generateReply(session, { proactive = false, catchup = fals
     S.abortController = controller;
     S.isGenerating = true;
     try {
-        const raw = await dispatch(messages, getMaxTokens(), controller.signal);
+        const raw = await captureRequest(() => dispatch(messages, getMaxTokens(), controller.signal));
         const { kind, delayMinutes, text } = extractReplyMarker(raw);
         const bubbles = splitIntoBubbles(text);
         if (!bubbles.length && kind === REPLY_KIND.REPLY) {
@@ -114,6 +143,7 @@ export async function generateReply(session, { proactive = false, catchup = fals
                 reason: '답장이 비어서 왔어요',
                 detail: describeAttempt(raw),
                 raw: String(raw ?? ''),
+                request: S.lastRequest,
                 at: Date.now(),
             };
         }

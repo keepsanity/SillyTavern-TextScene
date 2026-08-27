@@ -115,12 +115,18 @@ export function buildChatMessages(session, { proactive = false, catchup = false 
         });
     }
 
-    // Chat completion APIs expect the last turn to be 'user'.
+    // The last turn must be 'user'. Leaving an assistant turn last makes the core rewrite its
+    // role while keeping the character's own words, so the model sees nothing to answer and
+    // returns an empty completion.
+    let closing = null;
     if (!window.length) {
-        messages.push({ role: 'user', content: '[Send the first text message now.]' });
+        closing = '[Send the first text message now.]';
     } else if (catchup) {
-        messages.push({ role: 'user', content: '[Did {{char}} text first in the meantime? Answer with the marker.]' });
+        closing = '[Did {{char}} text first in the meantime? Answer with the marker.]';
+    } else if (window[window.length - 1]?.who === WHO.CHAR) {
+        closing = '[Send the next text message now.]';
     }
+    if (closing) messages.push({ role: 'user', content: substituteParams(closing) });
 
     return messages;
 }

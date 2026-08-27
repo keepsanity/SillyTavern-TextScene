@@ -83,8 +83,8 @@ export function bindSettingsEvents() {
     document.querySelector('#ts-reset-prompts')?.addEventListener('click', () => {
         if (!confirm('메신저 지시문과 요약 지시문을 기본값으로 되돌릴까요?')) return;
         const s = ensureSettings();
-        s.messengerPrompt = MESSENGER_SYSTEM;
-        s.summaryPrompt = SUMMARY_PROMPT;
+        s.messengerPrompt = '';
+        s.summaryPrompt = '';
         saveSettingsDebounced();
         const m = document.querySelector('#ts-messenger-prompt');
         const u = document.querySelector('#ts-summary-prompt');

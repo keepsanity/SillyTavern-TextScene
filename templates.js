@@ -53,7 +53,7 @@ export function buildSettingsHTML() {
                 <select id="ts-profile" class="text_pole"></select>
 
                 <label for="ts-max-tokens">답장 최대 토큰</label>
-                <input id="ts-max-tokens" class="text_pole" type="number" min="200" max="8000" step="100">
+                <input id="ts-max-tokens" class="text_pole" type="number" min="200" max="20000" step="500">
 
                 <label for="ts-bridge-turns">상황 연결 (메인 채팅 최근 N턴)</label>
                 <input id="ts-bridge-turns" class="text_pole" type="number" min="0" max="20" step="1">

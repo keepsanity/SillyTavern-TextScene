@@ -21,6 +21,9 @@ export const S = {
     /** { reason, detail, raw, at } */
     lastIssue: null,
 
+    /** Redacted copy of the last outgoing generation payload, for the issue card. */
+    lastRequest: '',
+
     /** id of the message being edited in place */
     editingId: null,
     /** id of the message whose action menu is open */

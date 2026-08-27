@@ -31,8 +31,8 @@ const DEFAULTS = {
     /** Judge on open whether the character texted first during the RP. */
     catchup: true,
     insertTime: true,
-    messengerPrompt: MESSENGER_SYSTEM,
-    summaryPrompt: SUMMARY_PROMPT,
+    messengerPrompt: '',
+    summaryPrompt: '',
 };
 
 export function ensureSettings() {
@@ -48,10 +48,22 @@ export function ensureSettings() {
         s.tokenFixApplied = true;
         if (Number(s.maxTokens) <= 300) s.maxTokens = DEFAULT_MAX_TOKENS;
     }
-    // Thinking tokens share the cap, so the old 1000 could be spent before any body.
+    // Thinking tokens share the cap, so anything tight starves the body.
     if (!s.thinkingFixApplied) {
         s.thinkingFixApplied = true;
         if (Number(s.maxTokens) <= 1000) s.maxTokens = DEFAULT_MAX_TOKENS;
+    }
+    // Drop stored copies that only ever held a past default, so the current one applies.
+    if (!s.promptUnfreezeApplied) {
+        s.promptUnfreezeApplied = true;
+        if (String(s.messengerPrompt || '').startsWith('<messenger_mode')
+            && !String(s.messengerPrompt).includes('<reply_timing')) {
+            s.messengerPrompt = '';
+        }
+    }
+    if (!s.capFixApplied) {
+        s.capFixApplied = true;
+        if (Number(s.maxTokens) <= 3000) s.maxTokens = DEFAULT_MAX_TOKENS;
     }
     return s;
 }
@@ -69,7 +81,7 @@ function num(key, min, max) {
 }
 
 export function getMaxTokens() {
-    return num('maxTokens', 20, 4000);
+    return num('maxTokens', 200, 20000);
 }
 
 export function getBridgeTurns() {

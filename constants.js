@@ -68,9 +68,8 @@ export const DEFAULT_BRIDGE_TURNS = 3;
 /** Character cap per bridge message */
 export const BRIDGE_CHAR_LIMIT = 1200;
 
-// Headroom for the marker line, multiple bubbles, and thinking tokens, which Claude
-// counts against this same cap.
-export const DEFAULT_MAX_TOKENS = 3000;
+// A cap, not a spend. Thinking tokens count against it, so a tight value starves the body.
+export const DEFAULT_MAX_TOKENS = 10000;
 
 export const SUMMARY_MAX_TOKENS = 500;
 
