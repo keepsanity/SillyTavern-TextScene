@@ -1,9 +1,12 @@
+import { t } from './i18n.js';
+
 // Bubble themes: CSS variable sets applied inline to the sheet root.
 // `default` defines nothing, so style.css falls back to ST theme colors.
 
 export const THEME_VARS = [
     '--ts-sheet-bg',
     '--ts-head-bg',
+    '--ts-head-fg',
     '--ts-log-bg',
     '--ts-fg',
     '--ts-border',
@@ -19,12 +22,12 @@ export const THEME_VARS = [
 
 export const THEMES = {
     default: {
-        name: 'SillyTavern 테마',
+        name: t("SillyTavern 테마"),
         vars: {},
     },
 
     sky: {
-        name: '하늘 · 노랑',
+        name: t("하늘 · 노랑"),
         vars: {
             '--ts-sheet-bg': '#9bbbd4',
             '--ts-head-bg': '#8faec8',
@@ -43,7 +46,7 @@ export const THEMES = {
     },
 
     bubble: {
-        name: '파랑 · 회색',
+        name: t("파랑 · 회색"),
         vars: {
             '--ts-sheet-bg': '#ffffff',
             '--ts-head-bg': 'rgba(249,249,249,0.94)',
@@ -62,10 +65,11 @@ export const THEMES = {
     },
 
     paper: {
-        name: '종이 · 연두',
+        name: t("종이 · 연두"),
         vars: {
             '--ts-sheet-bg': '#ece5dd',
             '--ts-head-bg': '#075e54',
+            '--ts-head-fg': '#ffffff',
             '--ts-log-bg': '#ece5dd',
             '--ts-fg': '#111b21',
             '--ts-border': 'rgba(0,0,0,0.1)',
@@ -81,7 +85,7 @@ export const THEMES = {
     },
 
     forest: {
-        name: '초록',
+        name: t("초록"),
         vars: {
             '--ts-sheet-bg': '#ffffff',
             '--ts-head-bg': '#ffffff',
@@ -100,7 +104,7 @@ export const THEMES = {
     },
 
     midnight: {
-        name: '심야',
+        name: t("심야"),
         vars: {
             '--ts-sheet-bg': '#17212b',
             '--ts-head-bg': '#17212b',
@@ -119,7 +123,7 @@ export const THEMES = {
     },
 
     dusk: {
-        name: '보랏빛',
+        name: t("보랏빛"),
         vars: {
             '--ts-sheet-bg': '#241b2f',
             '--ts-head-bg': '#2c2139',
@@ -138,7 +142,7 @@ export const THEMES = {
     },
 
     mono: {
-        name: '흑백',
+        name: t("흑백"),
         vars: {
             '--ts-sheet-bg': '#fafafa',
             '--ts-head-bg': '#fafafa',

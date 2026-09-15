@@ -1,4 +1,4 @@
-/** Language detection for insert text. The overlay UI language is separate and fixed. */
+/** Language detection for insert text. The overlay UI language follows SillyTavern separately. */
 
 import { getContext } from '../../../extensions.js';
 import { LANG } from './constants.js';

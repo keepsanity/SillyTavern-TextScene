@@ -4,6 +4,7 @@ import { chat, chat_metadata, saveChatDebounced } from '../../../../script.js';
 import { uuidv4 } from '../../../utils.js';
 import { META_KEY, WHO } from './constants.js';
 import { readSceneDate, nextStamp, restampMessages } from './infoblock.js';
+import { getCommitBatch, getCommits, invalidateFrom } from './commits.js';
 
 export function getSessions() {
     if (!chat_metadata[META_KEY] || typeof chat_metadata[META_KEY] !== 'object') {
@@ -27,7 +28,7 @@ export function getSession(id) {
 /** Returns the existing unclosed session if there is one, otherwise creates a new one. */
 export function startSession(charName) {
     const open = getSessions().find(s => !s.closed);
-    if (open) return open;
+    if (open) { getCommits(open); return open; }
 
     const sceneDate = readSceneDate();
     const session = {
@@ -46,6 +47,11 @@ export function startSession(charName) {
         insertedAt: null,
         summary: '',
         messages: [],
+        commits: [],
+        commitMigrationDone: true,
+        draft: '',
+        contextNote: '',
+        bundleMode: false,
     };
     getSessions().push(session);
     saveSessions();
@@ -56,7 +62,7 @@ export function startSession(charName) {
  * Appends one message. The in-story stamp is baked in at send time, never recomputed on render.
  * `delayMinutes` overrides the real elapsed time.
  */
-export function appendMessage(sessionId, who, text, { delayMinutes = null } = {}) {
+export function appendMessage(sessionId, who, text, { delayMinutes = null, kind = null, burstId = null } = {}) {
     const session = getSession(sessionId);
     if (!session) return null;
     const now = Date.now();
@@ -70,10 +76,14 @@ export function appendMessage(sessionId, who, text, { delayMinutes = null } = {}
         sceneMin: stamp.sceneMin,
         clock: stamp.clock,
         date: stamp.date,
+        anchorDate: session.anchorDate ? { ...session.anchorDate } : null,
+        anchorDateRaw: session.anchorDateRaw,
         /** Whether the character has seen it; only meaningful for user messages */
         read: who === WHO.CHAR,
         /** Already carried over into the main chat */
         inserted: false,
+        kind,
+        burstId,
     };
     session.messages.push(message);
     saveSessions();
@@ -84,6 +94,7 @@ export function updateMessage(sessionId, messageId, text) {
     const session = getSession(sessionId);
     const message = session?.messages.find(m => m.id === messageId);
     if (!message) return false;
+    getCommits(session);
     message.text = String(text ?? '');
     saveSessions();
     return true;
@@ -94,6 +105,7 @@ export function deleteMessage(sessionId, messageId) {
     if (!session) return false;
     const idx = session.messages.findIndex(m => m.id === messageId);
     if (idx === -1) return false;
+    getCommits(session);
     session.messages.splice(idx, 1);
     saveSessions();
     return true;
@@ -105,6 +117,7 @@ export function truncateFrom(sessionId, messageId) {
     if (!session) return false;
     const idx = session.messages.findIndex(m => m.id === messageId);
     if (idx === -1) return false;
+    getCommits(session);
     session.messages.splice(idx);
     saveSessions();
     return true;
@@ -115,8 +128,10 @@ export function lastCharBurstStart(session) {
     if (!session?.messages?.length) return -1;
     const messages = session.messages;
     let i = messages.length - 1;
-    if (messages[i].who !== WHO.CHAR) return -1;
-    while (i > 0 && messages[i - 1].who === WHO.CHAR) i--;
+    if (messages[i].who !== WHO.CHAR || messages[i].kind) return -1;
+    const burstId = messages[i].burstId;
+    while (i > 0 && messages[i - 1].who === WHO.CHAR && !messages[i - 1].kind
+        && (!burstId || messages[i - 1].burstId === burstId)) i--;
     return i;
 }
 
@@ -137,7 +152,7 @@ export function getTimeShift(session) {
 }
 
 export function getPendingMessages(session) {
-    return (session?.messages ?? []).filter(m => !m.inserted);
+    return session ? getCommitBatch(session).messages : [];
 }
 
 export function getInsertedCount(session) {
@@ -153,6 +168,8 @@ export function markInserted(sessionId, messageIds) {
     }
     session.lastInsertedAt = Date.now();
     session.chatLenAtInsert = Array.isArray(chat) ? chat.length : 0;
+    session.storyRevisionAtInsert = storyRevision();
+    session.lastCatchupRevision = session.storyRevisionAtInsert;
     saveSessions();
     return true;
 }
@@ -176,7 +193,27 @@ export function hasStoryMovedOn(session) {
     // 0 is a valid length; only a missing record means nothing was ever carried over.
     if (session?.chatLenAtInsert == null) return false;
     const now = Array.isArray(chat) ? chat.length : 0;
-    return now > session.chatLenAtInsert;
+    const revision = session.lastCatchupRevision || session.storyRevisionAtInsert;
+    return revision ? storyRevision() !== revision : now > session.chatLenAtInsert;
+}
+
+/** Includes content so edits and swipes count; inserted phone blocks are not new RP events. */
+export function storyRevision() {
+    let hash = 2166136261;
+    let count = 0;
+    for (const message of chat) {
+        if (message.extra?.textscene_session) continue;
+        count++;
+        const value = JSON.stringify([message.is_user, message.name, message.mes]);
+        for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
+    }
+    return `${count}:${hash >>> 0}`;
+}
+
+export function markCatchupChecked(session, revision) {
+    if (getSession(session.id) !== session) return;
+    session.lastCatchupRevision = revision;
+    saveSessions();
 }
 
 export function getUnreadCount(session) {
@@ -189,6 +226,7 @@ export function unmarkInsertedFrom(sessionId, messageId) {
     if (!session) return false;
     const idx = session.messages.findIndex(m => m.id === messageId);
     if (idx === -1) return false;
+    invalidateFrom(session, messageId);
     let changed = false;
     for (let i = idx; i < session.messages.length; i++) {
         if (session.messages[i].inserted) {

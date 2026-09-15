@@ -3,6 +3,11 @@ export const S = {
     isOpen: false,
     activeSessionId: null,
     sheetEl: null,
+    viewEpoch: 0,
+    dialogs: new Set(),
+    jobs: new Set(),
+    revealController: null,
+    isCommitting: false,
     /** History viewing mode — input and actions disabled */
     isReadonly: false,
 

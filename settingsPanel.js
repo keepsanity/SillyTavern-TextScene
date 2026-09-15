@@ -1,10 +1,10 @@
+import { t } from './i18n.js';
+
 /** Settings panel bindings. */
 
 import { saveSettingsDebounced } from '../../../../script.js';
-import { extension_settings } from '../../../extensions.js';
 import { ConnectionManagerRequestService } from '../../../extensions/shared.js';
 import {
-    EXTENSION_NAME,
     DEBUG_PREFIX,
     MESSENGER_SYSTEM,
     SUMMARY_PROMPT,
@@ -48,6 +48,8 @@ export function bindSettingsEvents() {
     ensureSettings();
 
     bindInput('#ts-max-tokens', 'maxTokens', { type: 'number' });
+    bindInput('#ts-summary-tokens', 'summaryMaxTokens', { type: 'number' });
+    bindInput('#ts-time-tokens', 'timeMaxTokens', { type: 'number' });
     bindInput('#ts-bridge-turns', 'bridgeTurns', { type: 'number' });
     bindInput('#ts-typing-effect', 'typingEffect', { type: 'checkbox' });
     bindInput('#ts-infoblock-time', 'infoblockTime', { type: 'checkbox' });
@@ -81,7 +83,7 @@ export function bindSettingsEvents() {
     bindProfileDropdown();
 
     document.querySelector('#ts-reset-prompts')?.addEventListener('click', () => {
-        if (!confirm('메신저 지시문과 요약 지시문을 기본값으로 되돌릴까요?')) return;
+        if (!confirm(t("메신저 지시문과 요약 지시문을 기본값으로 되돌릴까요?"))) return;
         const s = ensureSettings();
         s.messengerPrompt = '';
         s.summaryPrompt = '';
@@ -90,7 +92,7 @@ export function bindSettingsEvents() {
         const u = document.querySelector('#ts-summary-prompt');
         if (m) m.value = MESSENGER_SYSTEM;
         if (u) u.value = SUMMARY_PROMPT;
-        if (typeof toastr !== 'undefined') toastr.info('기본값으로 되돌렸어요.', '문자 씬');
+        if (typeof toastr !== 'undefined') toastr.info(t("기본값으로 되돌렸어요."), t("문자 씬"));
     });
 }
 
@@ -110,12 +112,15 @@ function bindProfileDropdown() {
         );
     } catch (error) {
         console.warn(DEBUG_PREFIX, 'Connection Manager unavailable:', error);
-        select.innerHTML = '<option value="">— 연결 관리자를 켜면 고를 수 있어요 —</option>';
-        select.disabled = true;
-        if (extension_settings[EXTENSION_NAME]?.profileId) {
-            extension_settings[EXTENSION_NAME].profileId = '';
+        const selected = ensureSettings().profileId;
+        select.replaceChildren(new Option(t("현재 API 사용"), ''));
+        if (selected) select.add(new Option(t("선택한 프로필 (현재 사용할 수 없음)"), selected));
+        select.value = selected;
+        select.disabled = false;
+        select.addEventListener('change', () => {
+            ensureSettings().profileId = select.value;
             saveSettingsDebounced();
-        }
+        });
     }
 }
 

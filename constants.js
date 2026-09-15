@@ -1,4 +1,6 @@
-/** Constants (pure data only, no side effects). */
+import { t } from './i18n.js';
+
+/** Constants and localized UI labels. */
 
 export const EXTENSION_NAME = 'SillyTavern-TextScene';
 export const DEBUG_PREFIX = '[TextScene]';
@@ -13,14 +15,14 @@ export const WHO = {
 
 /** Format to leave in the main chat when closing */
 export const INSERT_MODE = {
-    SUMMARY: 'summary',     // summary only (zero context pollution)
+    SUMMARY: 'summary',     // summary only
     BOTH: 'both',           // summary + full text log
     FULL: 'full',           // full text log only
 };
 export const INSERT_MODE_LABELS = {
-    [INSERT_MODE.SUMMARY]: '요약만',
-    [INSERT_MODE.BOTH]: '요약 + 전문',
-    [INSERT_MODE.FULL]: '전문 그대로',
+    [INSERT_MODE.SUMMARY]: t("요약만"),
+    [INSERT_MODE.BOTH]: t("요약 + 전문"),
+    [INSERT_MODE.FULL]: t("전문 그대로"),
 };
 
 /** Language of the text inserted into the main chat (not the overlay UI language). */
@@ -30,8 +32,8 @@ export const LANG = {
     EN: 'en',
 };
 export const LANG_LABELS = {
-    [LANG.AUTO]: '자동 (채팅에 맞춤)',
-    [LANG.KO]: '한국어',
+    [LANG.AUTO]: t("자동 (채팅에 맞춤)"),
+    [LANG.KO]: t("한국어"),
     [LANG.EN]: 'English',
 };
 
@@ -71,7 +73,7 @@ export const BRIDGE_CHAR_LIMIT = 1200;
 // A cap, not a spend. Thinking tokens count against it, so a tight value starves the body.
 export const DEFAULT_MAX_TOKENS = 10000;
 
-export const SUMMARY_MAX_TOKENS = 500;
+export const SUMMARY_MAX_TOKENS = 4000;
 
 // ============ Prompts ============
 
@@ -178,8 +180,8 @@ export const TIME_ESTIMATE_PROMPT = `<time_estimate_task priority="critical">
 
 Minutes elapsed:`;
 
-// Needs headroom for a preamble before the number, or the answer is truncated away.
-export const TIME_ESTIMATE_MAX_TOKENS = 48;
+// Reasoning can share the output cap; the visible answer still must be a single integer.
+export const TIME_ESTIMATE_MAX_TOKENS = 2000;
 
 /** Max trusted elapsed-time estimate (minutes). */
 export const TIME_ESTIMATE_MAX_MINUTES = 720;

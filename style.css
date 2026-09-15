@@ -1,4 +1,17 @@
 /* ===== Overlay / sheet ===== */
+.ts-options { flex: 0 0 auto; padding: 8px 12px; border-bottom: 1px solid var(--ts-border); max-height: 42%; overflow-y: auto; }
+.ts-options summary { cursor: pointer; font-size: 0.85rem; }
+.ts-options label { display: block; margin: 10px 0 4px; font-size: 0.8rem; }
+.ts-options textarea, .ts-options input, .ts-options select { box-sizing: border-box; width: 100%; background: var(--ts-sheet-bg); color: var(--ts-fg); border: 1px solid var(--ts-border); padding: 8px; font: inherit; font-size: 16px; }
+.ts-options textarea { resize: vertical; }
+.ts-options .ts-note { display: block; margin: 6px 0; font-size: 0.75rem; line-height: 1.5; }
+.ts-option-actions, .ts-compose-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 12px; }
+.ts-compose-tools { flex: 0 0 auto; border-top: 1px solid var(--ts-border); font-size: 0.8rem; }
+.ts-compose-tools label { display: flex; align-items: center; gap: 6px; }
+.ts-compose-tools [hidden] { display: none; }
+.ts-row.ts-phone-event { display: block; text-align: center; font-size: 0.75rem; opacity: 0.7; padding: 8px; }
+.ts-revision-history { padding: 8px 12px; max-height: 25vh; overflow-y: auto; font-size: 0.8rem; }
+.ts-revision-history pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .ts-overlay {
     position: fixed;
     inset: 0;
@@ -45,6 +58,7 @@
     gap: 8px;
     padding: 8px 10px;
     background: var(--ts-head-bg);
+    color: var(--ts-head-fg, var(--ts-fg));
     border-bottom: 1px solid var(--ts-border);
     flex: 0 0 auto;
 }

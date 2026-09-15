@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 /** Button on an inserted text block that reopens the original session read-only. */
 
 import { eventSource, event_types, chat } from '../../../../script.js';
@@ -23,7 +25,7 @@ export function injectHistoryButton(mesEl) {
     bar.className = HISTORY_BTN_CLASS + '-bar';
     bar.innerHTML = `
         <button type="button" class="${HISTORY_BTN_CLASS}">
-            <i class="fa-solid fa-comment-sms"></i> 문자 원문 보기
+            <i class="fa-solid fa-comment-sms"></i> ${t("문자 원문 보기")}
         </button>`;
     text.insertAdjacentElement('afterend', bar);
 }

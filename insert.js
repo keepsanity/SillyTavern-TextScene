@@ -1,9 +1,13 @@
+import { t } from './i18n.js';
+
 /** Inserts a finished text scene into the main chat as a single narrator message. */
 
 import {
     chat,
     addOneMessage,
-    saveChatConditional,
+    updateMessageBlock,
+    eventSource,
+    event_types,
     chat_metadata,
     system_avatar,
 } from '../../../../script.js';
@@ -14,6 +18,12 @@ import { getUserName } from './prompt.js';
 import { getEffectiveLanguage } from './lang.js';
 import { isInsertTimeEnabled } from './config.js';
 import { withParticle } from './utils.js';
+import { uuidv4 } from '../../../utils.js';
+import { getCommitBatch, getCommits, fingerprint, findCommitMessage } from './commits.js';
+import { captureOwner, ensureCurrent } from './lifecycle.js';
+import { markInserted, getSession } from './store.js';
+import { S } from './state.js';
+import { persistChat } from './persistence.js';
 
 /** Renders the log as a markdown blockquote. */
 function renderLog(session, messages) {
@@ -21,6 +31,12 @@ function renderLog(session, messages) {
     const userName = getUserName();
     return messages
         .map(m => {
+            if (m.kind) {
+                const label = getEffectiveLanguage() === LANG.KO
+                    ? (m.kind === 'silent' ? '읽음 · 답장 없음' : '아직 읽지 않음')
+                    : (m.kind === 'silent' ? 'Read · no reply' : 'Not read');
+                return `> *${m.clock ? m.clock + ' · ' : ''}${label}*`;
+            }
             const who = m.who === WHO.CHAR ? charName : userName;
             // Every line needs '> ' or multi-line texts break out of the blockquote.
             const body = String(m.text).split('\n').join('\n> ');
@@ -72,7 +88,6 @@ function buildTimeRange(targets) {
  */
 export function buildInsertText(session, mode, summary, messages = null) {
     const targets = messages ?? session.messages;
-    const count = targets.length;
     const { header, logSummary } = buildLabels(session, targets);
     const log = renderLog(session, targets);
     const clean = String(summary ?? '').trim();
@@ -92,11 +107,31 @@ export function buildInsertText(session, mode, summary, messages = null) {
 
 /** Inserts into the main chat. Returns true on success. */
 export async function insertIntoChat(session, mode, summary, messages = null) {
-    const targets = messages ?? session.messages;
-    const text = buildInsertText(session, mode, summary, targets);
-    if (!text.trim()) return false;
-
-    const message = {
+    if (S.isCommitting || getSession(session.id) !== session) return false;
+    const owner = captureOwner(session);
+    const batch = getCommitBatch(session);
+    const targets = messages ?? batch.messages;
+    if (fingerprint(targets) !== fingerprint(batch.messages)) return false;
+    if (!targets.length && !batch.replacement) return false;
+    let commit = batch.commit;
+    let message = commit ? findCommitMessage(commit) : null;
+    if (message && commit.lastText !== message.mes) {
+        toastr.warning(t("RP에서 직접 수정한 반영본이 있어 덮어쓰지 않았어요. 문자 반영본을 확인해 주세요."), t("문자 씬"));
+        return false;
+    }
+    const text = targets.length ? buildInsertText(session, mode, summary, targets)
+        : getEffectiveLanguage() === LANG.KO ? '📱 *이 문자 구간의 내용이 삭제되었습니다.*' : '📱 *The messages in this text scene were removed.*';
+    S.isCommitting = true;
+    const isUpdate = !!message;
+    if (!commit) {
+        commit = { id: uuidv4(), messageIds: [], revisions: [] };
+        getCommits(session).push(commit);
+    }
+    if (message && message.mes !== text) {
+        commit.revisions ??= [];
+        commit.revisions.push({ at: Date.now(), text: message.mes, summary: commit.summary });
+    }
+    if (!message) message = {
         name: session.charName || 'Character',
         is_user: false,
         // Must stay false: ST strips is_system messages from the prompt.
@@ -111,23 +146,41 @@ export async function insertIntoChat(session, mode, summary, messages = null) {
             model: 'text scene',
             [INSERT_MARKER]: {
                 sessionId: session.id,
-                mode,
-                count: targets.length,
+                commitId: commit.id,
             },
         },
     };
 
     try {
+        ensureCurrent(owner);
+        message.mes = text;
+        Object.assign(message.extra[INSERT_MARKER], { mode, count: targets.length });
+        Object.assign(commit, { messageIds: targets.map(m => m.id), fingerprint: fingerprint(targets),
+            lastText: text, mode, summary, saved: true, forceDirty: false });
+        session.summary = summary;
+        // Mark BEFORE serialization: the phone log and its RP message are saved together.
+        markInserted(session.id, targets.map(m => m.id));
         chat_metadata.tainted = true;
-        chat.push(message);
-        addOneMessage(message);
-        await saveChatConditional();
+        if (!isUpdate) { chat.push(message); addOneMessage(message); }
+        else updateMessageBlock(chat.indexOf(message), message);
+        session.chatLenAtInsert = chat.length;
+        // Core saveChatConditional swallows failures. Use the same endpoint with a fixed snapshot
+        // and retain the commit ID on failure so retry updates this block instead of duplicating it.
+        await persistChat(owner);
+        if (owner()) {
+            const index = chat.indexOf(message);
+            try {
+                await eventSource.emit(isUpdate ? event_types.MESSAGE_UPDATED : event_types.MESSAGE_RECEIVED, index, 'textscene');
+                if (owner()) await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, index, 'textscene');
+            } catch (error) { console.warn(DEBUG_PREFIX, 'Saved, but an extension event handler failed:', error); }
+        }
         return true;
     } catch (error) {
+        commit.saved = false;
         console.error(DEBUG_PREFIX, 'Insert failed:', error);
         if (typeof toastr !== 'undefined') {
-            toastr.error('메인 채팅에 넣지 못했습니다. 콘솔을 확인해 주세요.', '문자 씬');
+            toastr.error(String(error?.message || error), t("문자 씬"));
         }
         return false;
-    }
+    } finally { S.isCommitting = false; }
 }

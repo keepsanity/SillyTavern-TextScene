@@ -1,3 +1,5 @@
+import { t } from '../i18n.js';
+
 /** Overlay messenger sheet. Messages live in the session until committed to the main chat. */
 
 import { getContext } from '../../../../extensions.js';
@@ -17,8 +19,17 @@ import {
     markRead,
     hasStoryMovedOn,
     unmarkInsertedFrom,
+    saveSessions,
+    closeSession,
+    getSessions,
+    storyRevision,
+    markCatchupChecked,
 } from '../store.js';
-import { generateReply, abortGeneration } from '../generation.js';
+import { getCommitBatch, getCommits, hasPendingChanges } from '../commits.js';
+import { captureOwner, withAbort } from '../lifecycle.js';
+import { uuidv4 } from '../../../../utils.js';
+import { persistChat } from '../persistence.js';
+import { generateReply, abortGeneration, generateSceneContext } from '../generation.js';
 import { getCharName } from '../prompt.js';
 import { isTypingEffectEnabled, isAutoEstimateEnabled, getThemeKey, isCatchupEnabled } from '../config.js';
 import { applyTheme } from '../themes.js';
@@ -50,32 +61,65 @@ function buildSheetHTML(session, readonly) {
     return `
     <div class="ts-sheet">
         <div class="ts-head">
-            <button class="ts-icon-btn" id="ts-close" title="닫기">
+            <button class="ts-icon-btn" id="ts-close" title="${t("닫기")}">
                 <i class="fa-solid fa-chevron-left"></i>
             </button>
             ${avatar ? `<img class="ts-avatar" src="${escapeHtml(avatar)}" alt="">` : '<div class="ts-avatar ts-avatar-blank"></div>'}
             <div class="ts-head-info">
-                <div class="ts-head-name">${name}${readonly ? ' <span class="ts-readonly-tag">지난 문자</span>' : ''}</div>
+                <div class="ts-head-name">${name}${readonly ? ` <span class="ts-readonly-tag">${t("지난 문자")}</span>` : ''}</div>
                 <button class="ts-head-time" id="ts-head-time"${readonly ? ' disabled' : ''}></button>
             </div>
             ${readonly ? '' : `
-            <button class="ts-icon-btn" id="ts-proactive" title="상대가 먼저 보내게 하기">
+            <button class="ts-icon-btn" id="ts-proactive" title="${t("상대가 먼저 보내게 하기")}">
                 <i class="fa-solid fa-bell"></i>
             </button>
-            <button class="ts-btn ts-btn-finish" id="ts-commit">반영</button>`}
+            <button class="ts-btn ts-btn-finish" id="ts-commit">${t("반영")}</button>`}
         </div>
+        ${readonly ? '' : `
+        <details class="ts-options">
+            <summary>${t("진행 · 상황 · 지난 장면")}</summary>
+            <label for="ts-context-note">${t("현재 상황 · 서로 아는 사실 · 미결 약속")}</label>
+            <textarea id="ts-context-note" rows="3" placeholder="${t("예: 각자 귀가함. 내일 7시 약속은 아직 제안 단계.")}"></textarea>
+            <button class="ts-btn" id="ts-context-refresh">${t("최근 상황 읽어오기")}</button>
+            <small class="ts-note">${t("읽어온 메모는 직접 고칠 수 있습니다. 캐릭터가 모르는 사실과 추정을 확인해 주세요.")}</small>
+            <label for="ts-intent">${t("마무리 방향")}</label>
+            <select id="ts-intent">
+                <option value="">${t("직접 입력")}</option>
+                <option>${t("다정하게 잘 자 인사로 마무리하기")}</option>
+                <option>${t("상대를 안심시키고 자연스럽게 마무리하기")}</option>
+                <option>${t("미결 약속을 확인하되 내 동의를 대신 정하지 않기")}</option>
+            </select>
+            <input id="ts-intent-custom" type="text" maxlength="800" placeholder="${t("원하는 방향을 입력하세요")}">
+            <div class="ts-option-actions">
+                <button class="ts-btn" id="ts-wrap">${t("마무리 답장 받기")}</button>
+                <button class="ts-btn" id="ts-end">${t("반영하고 장면 끝내기")}</button>
+            </div>
+            <label for="ts-history">${t("지난 문자 장면")}</label>
+            <select id="ts-history"><option value="">${t("기록 선택")}</option>${getSessions().filter(s => s.closed).slice().reverse().map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.charName)} · ${escapeHtml(s.messages[0]?.date || new Date(s.startedAt).toLocaleDateString())} · ${s.messages.length}${t("통")}</option>`).join('')}</select>
+        </details>`}
+        <div id="ts-revisions">${renderRevisions(session)}</div>
         <div class="ts-log" id="ts-log">${renderBubbleList(session)}</div>
         ${readonly ? '' : `
+        <div class="ts-compose-tools">
+            <label><input id="ts-bundle" type="checkbox"${session.bundleMode ? ' checked' : ''}> ${t("묶어 보내기")}</label>
+            <button class="ts-btn" id="ts-request"${session.bundleMode ? '' : ' hidden'}>${t("답장 받기")}</button>
+        </div>
         <div class="ts-compose">
-            <textarea id="ts-input" class="ts-input" rows="1" placeholder="문자 입력..."></textarea>
-            <button class="ts-send" id="ts-send" title="보내기">
+            <textarea id="ts-input" class="ts-input" rows="1" placeholder="${t("문자 입력...")}"></textarea>
+            <button class="ts-send" id="ts-send" title="${t("보내기")}">
                 <i class="fa-solid fa-paper-plane" id="ts-send-icon"></i>
             </button>
-            <button class="ts-send ts-stop" id="ts-stop" title="생성 중단" style="display:none;">
+            <button class="ts-send ts-stop" id="ts-stop" title="${t("생성 중단")}" style="display:none;">
                 <i class="fa-solid fa-stop"></i>
             </button>
         </div>`}
     </div>`;
+}
+
+function renderRevisions(session) {
+    const revisions = getCommits(session).flatMap(c => c.revisions ?? []);
+    if (!revisions.length) return '';
+    return `<details class="ts-revision-history"><summary>${t("이전 반영 내용 (")}${revisions.length})</summary>${revisions.slice().reverse().map(r => `<p>${escapeHtml(new Date(r.at).toLocaleString())}</p><pre>${escapeHtml(r.text)}</pre>`).join('')}</details>`;
 }
 
 /**
@@ -93,15 +137,15 @@ export async function openSheet({ proactive = false, sessionId = null, readonly 
         session = getSession(sessionId);
         if (!session) {
             if (typeof toastr !== 'undefined') {
-                toastr.warning('이 문자의 원문을 찾지 못했어요. 다른 채팅의 기록일 수 있어요.', '문자 씬');
+                toastr.warning(t("이 문자의 원문을 찾지 못했어요. 다른 채팅의 기록일 수 있어요."), t("문자 씬"));
             }
             return;
         }
     } else {
         const ctx = getContext();
-        if (ctx.characterId === undefined || ctx.characterId === null || ctx.characterId === '') {
+        if (ctx.groupId || ctx.characterId === undefined || ctx.characterId === null || ctx.characterId === '') {
             if (typeof toastr !== 'undefined') {
-                toastr.warning('캐릭터 채팅에서만 쓸 수 있어요. 그룹은 아직 안 돼요.', '문자 씬');
+                toastr.warning(t("캐릭터 채팅에서만 쓸 수 있어요. 그룹은 아직 안 돼요."), t("문자 씬"));
             }
             return;
         }
@@ -111,12 +155,20 @@ export async function openSheet({ proactive = false, sessionId = null, readonly 
     S.activeSessionId = session.id;
     S.isReadonly = !!readonly;
     S.isOpen = true;
+    S.viewEpoch++;
+    const owner = captureOwner(session, { view: true });
+    S.owner = owner;
+    if (!readonly && hasStoryMovedOn(session)) session.resumeScene = true;
 
     const overlay = document.createElement('div');
     overlay.className = 'ts-overlay';
     overlay.innerHTML = buildSheetHTML(session, S.isReadonly);
     document.body.appendChild(overlay);
     S.sheetEl = overlay;
+    if (!readonly) {
+        overlay.querySelector('#ts-input').value = session.draft || '';
+        overlay.querySelector('#ts-context-note').value = session.contextNote || '';
+    }
     applyTheme(overlay.querySelector('.ts-sheet'), getThemeKey());
 
     bindSheetEvents(overlay);
@@ -128,8 +180,11 @@ export async function openSheet({ proactive = false, sessionId = null, readonly 
     // Whether an estimate is warranted is decided inside autoEstimateTimeShift.
     if (!S.isReadonly && isAutoEstimateEnabled()) {
         const el = S.sheetEl?.querySelector('#ts-head-time');
-        if (el) el.textContent = '시간 확인 중...';
+        if (el) el.textContent = t("시간 확인 중...");
+        setBusy(true);
         await autoEstimateTimeShift(session.id);
+        if (!owner()) return;
+        setBusy(false);
         syncHeadTime();
     }
 
@@ -145,6 +200,15 @@ export async function openSheet({ proactive = false, sessionId = null, readonly 
 
 export function closeSheet() {
     if (!S.isOpen) return;
+    if (S.owner?.() && !S.isReadonly) {
+        const session = getSession(S.activeSessionId);
+        if (session) { session.draft = S.sheetEl?.querySelector('#ts-input')?.value || ''; saveSessions(); }
+    }
+    abortGeneration();
+    for (const close of [...S.dialogs]) close();
+    S.viewEpoch++;
+    S.isRevealing = false;
+    S.revealCount = null;
     window.removeEventListener('resize', syncHeight);
     window.removeEventListener('orientationchange', syncHeight);
     S.sheetEl?.remove();
@@ -155,6 +219,7 @@ export function closeSheet() {
     S.lastIssue = null;
     S.actionMenuFor = null;
     S.activeSessionId = null;
+    S.owner = null;
 }
 
 // Mobile 100vh exceeds the visible area; innerHeight avoids soft-keyboard jitter.
@@ -185,16 +250,62 @@ function bindSheetEvents(overlay) {
     overlay.querySelector('#ts-proactive').addEventListener('click', () => requestReply({ proactive: true }));
     overlay.querySelector('#ts-send').addEventListener('click', () => onSendButton());
     overlay.querySelector('#ts-stop').addEventListener('click', () => abortGeneration());
+    overlay.querySelector('#ts-bundle').addEventListener('change', event => {
+        const session = getSession(S.activeSessionId);
+        if (!session) return;
+        session.bundleMode = event.target.checked;
+        overlay.querySelector('#ts-request').hidden = !session.bundleMode;
+        saveSessions();
+        syncSendButton();
+    });
+    overlay.querySelector('#ts-request').addEventListener('click', () => onRequest());
+    overlay.querySelector('#ts-context-note').addEventListener('input', event => {
+        const session = getSession(S.activeSessionId);
+        if (session) { session.contextNote = event.target.value; saveSessions(); }
+    });
+    overlay.querySelector('#ts-context-refresh').addEventListener('click', async () => {
+        if (isBusy()) return;
+        const session = getSession(S.activeSessionId);
+        if (!session) return;
+        const owner = captureOwner(session, { view: true });
+        const input = overlay.querySelector('#ts-context-note');
+        const before = input.value;
+        setBusy(true);
+        try {
+            const note = await generateSceneContext(session);
+            if (!owner()) return;
+            if (input.value !== before) { toastr.info(t("직접 수정한 메모를 유지했어요. 필요하면 다시 읽어오세요."), t("문자 씬")); return; }
+            session.contextNote = note;
+            input.value = note;
+            saveSessions();
+        } catch (error) {
+            if (owner() && error?.name !== 'AbortError') toastr.error(String(error?.message || error), t("문자 씬"));
+        } finally { if (owner()) setBusy(false); }
+    });
+    overlay.querySelector('#ts-wrap').addEventListener('click', async () => {
+        const intent = overlay.querySelector('#ts-intent-custom').value.trim() || overlay.querySelector('#ts-intent').value;
+        if (!intent) { toastr.info(t("마무리 방향을 선택하거나 입력해 주세요."), t("문자 씬")); return; }
+        await onRequest({ intent });
+    });
+    overlay.querySelector('#ts-end').addEventListener('click', () => onCommit({ endScene: true }));
+    overlay.querySelector('#ts-history').addEventListener('change', event => {
+        if (!event.target.value || isBusy()) return;
+        const sessionId = event.target.value;
+        closeSheet();
+        openSheet({ sessionId, readonly: true });
+    });
 
     // Enter sends, Shift+Enter breaks a line; on touch, Enter always breaks a line.
     input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey && !isProbablyTouch()) {
+        if (event.key === 'Enter' && !event.isComposing && event.keyCode !== 229 && !event.shiftKey && !isProbablyTouch()) {
             event.preventDefault();
             onSend();
         }
     });
 
     input.addEventListener('input', () => {
+        const session = getSession(S.activeSessionId);
+        if (session) { session.draft = input.value; saveSessions(); }
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 140) + 'px';
         syncSendButton();
@@ -226,7 +337,10 @@ export function rerender() {
     const log = getLogEl();
     const session = getSession(S.activeSessionId);
     if (!log || !session) return;
-    log.innerHTML = renderBubbleList(session) + renderIssue();
+    const visible = S.revealCount == null ? session : { ...session, messages: session.messages.slice(0, S.revealCount) };
+    log.innerHTML = renderBubbleList(visible) + renderIssue();
+    const revisions = S.sheetEl?.querySelector('#ts-revisions');
+    if (revisions) revisions.innerHTML = renderRevisions(session);
     scrollToBottom();
 }
 
@@ -239,9 +353,9 @@ function renderIssue() {
         <div class="ts-issue-head"><i class="fa-solid fa-triangle-exclamation"></i> ${escapeHtml(issue.reason)}</div>
         <div class="ts-issue-detail">${escapeHtml(issue.detail)}</div>
         <div class="ts-issue-actions">
-            ${issue.raw ? '<button class="ts-btn ts-btn-mini2" data-issue="raw">모델 응답 보기</button>' : ''}
-            ${issue.request ? '<button class="ts-btn ts-btn-mini2" data-issue="req">보낸 요청 보기</button>' : ''}
-            <button class="ts-btn ts-btn-mini2" data-issue="dismiss">닫기</button>
+            ${issue.raw ? `<button class="ts-btn ts-btn-mini2" data-issue="raw">${t("모델 응답 보기")}</button>` : ''}
+            ${issue.request ? `<button class="ts-btn ts-btn-mini2" data-issue="req">${t("보낸 요청 보기")}</button>` : ''}
+            <button class="ts-btn ts-btn-mini2" data-issue="dismiss">${t("닫기")}</button>
         </div>
     </div>`;
 }
@@ -258,15 +372,15 @@ function bindIssueActions(log) {
         if (act === 'req') {
             const req = S.lastIssue?.request ?? '';
             const ok = await copyToClipboard(req);
-            alert(req || '(기록 없음)');
-            if (ok && typeof toastr !== 'undefined') toastr.success('요청을 복사했어요.', '문자 씬');
+            alert(req || t("(기록 없음)"));
+            if (ok && typeof toastr !== 'undefined') toastr.success(t("요청을 복사했어요."), t("문자 씬"));
             return;
         }
         if (act === 'raw') {
             const raw = S.lastIssue?.raw ?? '';
             const ok = await copyToClipboard(raw);
-            alert(raw || '(빈 응답)');
-            if (ok && typeof toastr !== 'undefined') toastr.success('응답을 복사했어요.', '문자 씬');
+            alert(raw || t("(빈 응답)"));
+            if (ok && typeof toastr !== 'undefined') toastr.success(t("응답을 복사했어요."), t("문자 씬"));
         }
     });
 }
@@ -309,6 +423,11 @@ function setBusy(busy) {
     const commit = overlay.querySelector('#ts-commit');
     if (proactive) proactive.disabled = busy;
     if (commit) commit.disabled = busy;
+    for (const id of ['ts-request', 'ts-wrap', 'ts-end', 'ts-bundle', 'ts-head-time', 'ts-history', 'ts-context-refresh']) {
+        const el = overlay.querySelector('#' + id);
+        if (el) el.disabled = busy;
+    }
+    if (!busy) syncCommitButton();
 }
 
 function showTyping(show) {
@@ -325,13 +444,15 @@ function showTyping(show) {
 // Send / generate
 // ============================================
 async function onSend() {
-    if (S.isGenerating || S.isRevealing) return;
+    if (isBusy()) return;
     const input = S.sheetEl?.querySelector('#ts-input');
     const text = String(input?.value ?? '').trim();
     if (!text) return;
 
     S.lastIssue = null;
     appendMessage(S.activeSessionId, WHO.USER, text);
+    const session = getSession(S.activeSessionId);
+    if (session) session.draft = '';
     input.value = '';
     input.style.height = 'auto';
     rerender();
@@ -339,89 +460,100 @@ async function onSend() {
     syncCommitButton();
     syncSendButton();
 
-    await requestReply({ proactive: false });
+    if (!session?.bundleMode) await requestReply({ proactive: false });
 }
 
-async function requestReply({ proactive = false, catchup = false } = {}) {
-    if (S.isGenerating || S.isRevealing) return;
+function isBusy() {
+    return S.isGenerating || S.isRevealing || S.isEstimating || S.isSummarizing || S.isCommitting;
+}
 
+async function onRequest(options = {}) {
+    if (isBusy()) return;
     const session = getSession(S.activeSessionId);
     if (!session) return;
-
-    setBusy(true);
-    S.skipReveal = false;
-    showTyping(true);
-
-    let bubbles = [];
-    let delayMinutes = null;
-    let kind = REPLY_KIND.REPLY;
-    try {
-        ({ bubbles, delayMinutes, kind } = await generateReply(session, { proactive, catchup }));
-    } catch (error) {
-        showTyping(false);
-        setBusy(false);
-        // A user-triggered abort is not an error.
-        if (S.skipReveal) S.lastIssue = null;
-        else console.error(DEBUG_PREFIX, 'generation failed:', error);
+    const input = S.sheetEl?.querySelector('#ts-input');
+    const text = input?.value.trim();
+    if (text) {
+        appendMessage(session.id, WHO.USER, text);
+        input.value = '';
+        session.draft = '';
+        saveSessions();
         rerender();
-        syncSendButton();
-        return;
     }
-
-    showTyping(false);
-
-    if (kind === REPLY_KIND.NONE) {
-        setBusy(false);
-        syncSendButton();
-        return;
-    }
-
-    // SILENT only flips the read marker; UNREAD leaves it as-is.
-    if (kind === REPLY_KIND.SILENT || kind === REPLY_KIND.UNREAD) {
-        if (kind === REPLY_KIND.SILENT) markRead(S.activeSessionId);
-        rerender();
-        setBusy(false);
-        syncSendButton();
-        return;
-    }
-
-    if (!bubbles.length) {
-        setBusy(false);
-        rerender();
-        syncSendButton();
-        return;
-    }
-
-    S.lastIssue = null;
-    markRead(S.activeSessionId);
-    await revealBubbles(bubbles, delayMinutes);
-    setBusy(false);
-    syncSendButton();
+    await requestReply(options);
 }
 
-/** `delayMinutes` is attached to the first bubble only; the rest land in the same beat. */
-async function revealBubbles(bubbles, delayMinutes = null) {
-    const animate = isTypingEffectEnabled();
-    S.isRevealing = true;
+async function requestReply({ proactive = false, catchup = false, intent = '', replaceFrom = null } = {}) {
+    if (isBusy()) return;
+    const session = getSession(S.activeSessionId);
+    if (!session) return;
+    const owner = captureOwner(session, { view: true });
+    const revision = storyRevision();
+    setBusy(true);
+    showTyping(true);
+    const messages = replaceFrom == null ? null : session.messages.slice(0, replaceFrom);
     try {
-        for (let i = 0; i < bubbles.length; i++) {
-            if (animate && !S.skipReveal) {
-                // The first bubble already showed an indicator, so halve its delay.
-                showTyping(true);
-                await sleep(typingDelayFor(bubbles[i]) / (i === 0 ? 2 : 1));
-                showTyping(false);
-            }
-            appendMessage(S.activeSessionId, WHO.CHAR, bubbles[i], {
-                delayMinutes: i === 0 ? delayMinutes : 0,
-            });
+        const result = await generateReply(session, { proactive, catchup, intent, messages });
+        if (!owner()) return;
+        markCatchupChecked(session, revision);
+        if (result.kind === REPLY_KIND.NONE) return;
+        // Only remove the old burst AFTER a valid replacement has arrived.
+        if (replaceFrom != null && result.kind === REPLY_KIND.REPLY) {
+            const first = session.messages[replaceFrom];
+            if (first) truncateFrom(session.id, first.id);
+        }
+        if (result.kind === REPLY_KIND.SILENT || result.kind === REPLY_KIND.UNREAD) {
+            if (result.kind === REPLY_KIND.SILENT) markRead(session.id);
+            appendMessage(session.id, WHO.CHAR, '', { kind: result.kind, delayMinutes: result.delayMinutes });
             rerender();
             syncHeadTime();
-            syncCommitButton();
+            return;
         }
+        S.lastIssue = null;
+        markRead(session.id);
+        await revealBubbles(session, result.bubbles, result.delayMinutes, owner);
+    } catch (error) {
+        if (owner() && error?.name !== 'AbortError') console.error(DEBUG_PREFIX, 'generation failed:', error);
     } finally {
-        showTyping(false);
-        S.isRevealing = false;
-        S.skipReveal = false;
+        if (owner()) {
+            showTyping(false);
+            setBusy(false);
+            rerender();
+            syncHeadTime();
+            syncSendButton();
+        }
+    }
+}
+
+/** Persist the complete burst before cosmetic reveal. Closing cannot lose or misroute bubbles. */
+async function revealBubbles(session, bubbles, delayMinutes, owner) {
+    const controller = new AbortController();
+    S.revealController = controller;
+    S.isRevealing = true;
+    const start = session.messages.length;
+    const burstId = uuidv4();
+    for (let i = 0; i < bubbles.length; i++) {
+        appendMessage(session.id, WHO.CHAR, bubbles[i], { delayMinutes: i === 0 ? delayMinutes : 0, burstId });
+    }
+    try {
+        if (isTypingEffectEnabled()) {
+            for (let i = 0; i < bubbles.length; i++) {
+                if (!owner()) return;
+                S.revealCount = start + i;
+                rerender();
+                showTyping(true);
+                await withAbort(sleep(typingDelayFor(bubbles[i]) / (i === 0 ? 2 : 1)), controller.signal);
+            }
+        }
+    } catch (error) {
+        if (error?.name !== 'AbortError') throw error;
+    } finally {
+        if (S.revealController === controller) {
+            S.revealController = null;
+            S.revealCount = null;
+            S.isRevealing = false;
+        }
+        if (owner()) { showTyping(false); rerender(); syncHeadTime(); syncCommitButton(); }
     }
 }
 
@@ -429,7 +561,7 @@ async function revealBubbles(bubbles, delayMinutes = null) {
 // Bubble action menu
 // ============================================
 function openActionMenu(messageId, anchor) {
-    if (!messageId || S.isReadonly || S.isGenerating || S.isRevealing || S.editingId) return;
+    if (!messageId || S.isReadonly || isBusy() || S.editingId) return;
     closeActionMenu();
 
     const session = getSession(S.activeSessionId);
@@ -442,12 +574,11 @@ function openActionMenu(messageId, anchor) {
     const menu = document.createElement('div');
     menu.className = 'ts-menu';
     menu.innerHTML = `
-        <button class="ts-menu-item" data-act="copy"><i class="fa-solid fa-copy"></i> 복사</button>
-        <button class="ts-menu-item" data-act="edit"><i class="fa-solid fa-pen"></i> 수정</button>
-        <button class="ts-menu-item" data-act="delete"><i class="fa-solid fa-trash"></i> 삭제</button>
-        ${canRegenerate ? '<button class="ts-menu-item" data-act="regen"><i class="fa-solid fa-rotate"></i> 답장 다시 받기</button>' : ''}
-        ${message.inserted ? '<button class="ts-menu-item" data-act="uncommit"><i class="fa-solid fa-rotate-left"></i> 여기부터 다시 반영</button>' : ''}
-        <button class="ts-menu-item" data-act="truncate"><i class="fa-solid fa-scissors"></i> 여기부터 지우기</button>
+        ${message.kind ? '' : `<button class="ts-menu-item" data-act="copy"><i class="fa-solid fa-copy"></i> ${t("복사")}</button><button class="ts-menu-item" data-act="edit"><i class="fa-solid fa-pen"></i> ${t("수정")}</button>`}
+        <button class="ts-menu-item" data-act="delete"><i class="fa-solid fa-trash"></i> ${t("삭제")}</button>
+        ${canRegenerate ? `<button class="ts-menu-item" data-act="regen"><i class="fa-solid fa-rotate"></i> ${t("답장 다시 받기")}</button>` : ''}
+        ${message.inserted ? `<button class="ts-menu-item" data-act="uncommit"><i class="fa-solid fa-rotate-left"></i> ${t("여기부터 다시 반영")}</button>` : ''}
+        <button class="ts-menu-item" data-act="truncate"><i class="fa-solid fa-scissors"></i> ${t("여기부터 지우기")}</button>
     `;
     S.sheetEl.appendChild(menu);
     S.actionMenuFor = messageId;
@@ -491,8 +622,8 @@ async function runAction(act, messageId) {
         const message = session.messages.find(m => m.id === messageId);
         const ok = await copyToClipboard(message?.text ?? '');
         if (typeof toastr !== 'undefined') {
-            if (ok) toastr.success('복사했어요.', '문자 씬');
-            else toastr.error('복사하지 못했어요.', '문자 씬');
+            if (ok) toastr.success(t("복사했어요."), t("문자 씬"));
+            else toastr.error(t("복사하지 못했어요."), t("문자 씬"));
         }
         return;
     }
@@ -516,7 +647,7 @@ async function runAction(act, messageId) {
         syncCommitButton();
         if (typeof toastr !== 'undefined') {
             const count = getPendingMessages(getSession(S.activeSessionId)).length;
-            toastr.info(`${count}통이 다시 반영 대상이 됐어요.`, '문자 씬');
+            toastr.info(t("{count}통이 다시 반영 대상이 됐어요.", { count }), t("문자 씬"));
         }
         return;
     }
@@ -530,9 +661,8 @@ async function runAction(act, messageId) {
     }
 
     if (act === 'regen') {
-        truncateFrom(S.activeSessionId, messageId);
-        rerender();
-        await requestReply({ proactive: !getSession(S.activeSessionId)?.messages.length });
+        const replaceFrom = session.messages.findIndex(m => m.id === messageId);
+        await requestReply({ proactive: replaceFrom === 0, replaceFrom });
     }
 }
 
@@ -554,8 +684,8 @@ function startInlineEdit(messageId) {
         <div class="ts-edit ts-edit-${side}">
             <textarea class="ts-edit-input" id="ts-edit-input"></textarea>
             <div class="ts-edit-actions">
-                <button class="ts-btn ts-btn-mini2" data-act="cancel">취소</button>
-                <button class="ts-btn ts-btn-mini2 ts-btn-primary" data-act="save">저장</button>
+                <button class="ts-btn ts-btn-mini2" data-act="cancel">${t("취소")}</button>
+                <button class="ts-btn ts-btn-mini2 ts-btn-primary" data-act="save">${t("저장")}</button>
             </div>
         </div>`;
 
@@ -575,6 +705,8 @@ function startInlineEdit(messageId) {
     const stop = () => {
         S.editingId = null;
         rerender();
+        syncCommitButton();
+        syncSendButton();
     };
 
     const save = () => {
@@ -604,22 +736,46 @@ function startInlineEdit(messageId) {
 // ============================================
 
 /** Hands pending messages to the main chat. The sheet stays open afterwards. */
-async function onCommit() {
+async function onCommit({ endScene = false } = {}) {
+    if (isBusy()) return;
     const session = getSession(S.activeSessionId);
     if (!session) return;
+    const owner = captureOwner(session, { view: true });
+    if (endScene && S.sheetEl.querySelector('#ts-input')?.value.trim()) {
+        toastr.info(t("작성 중인 문자를 먼저 보내거나 비워 주세요."), t("문자 씬"));
+        return;
+    }
 
-    const pending = getPendingMessages(session);
-    if (!pending.length) {
+    if (!hasPendingChanges(session)) {
+        if (endScene) { await finishScene(session, owner); return; }
         if (typeof toastr !== 'undefined') {
-            toastr.info('아직 새로 주고받은 문자가 없어요.', '문자 씬');
+            toastr.info(t("아직 새로 주고받은 문자가 없어요."), t("문자 씬"));
         }
         return;
     }
 
     const done = await openCommitDialog(session);
-    if (done) {
+    if (done && owner()) {
+        if (endScene && !hasPendingChanges(session)) { await finishScene(session, owner); return; }
         rerender();
         syncCommitButton();
+    }
+}
+
+async function finishScene(session, owner) {
+    S.isCommitting = true;
+    setBusy(true);
+    const before = { closed: session.closed, endedAt: session.endedAt };
+    closeSession(session.id);
+    try {
+        await persistChat(owner);
+        if (owner()) closeSheet();
+    } catch (error) {
+        Object.assign(session, before);
+        if (owner()) { saveSessions(); toastr.error(String(error?.message || error), t("문자 씬")); }
+    } finally {
+        S.isCommitting = false;
+        if (owner()) setBusy(false);
     }
 }
 
@@ -634,13 +790,16 @@ export function syncSendButton() {
 
     const messages = getSession(S.activeSessionId)?.messages ?? [];
     const last = messages[messages.length - 1];
-    const canRetry = !input.value.trim()
-        && !!last && last.who === WHO.USER
+    const session = getSession(S.activeSessionId);
+    const canRetry = !session?.bundleMode && !input.value.trim()
+        && !!last && (last.who === WHO.USER || last.kind)
         && !S.isGenerating && !S.isRevealing;
 
     button.classList.toggle('ts-send-retry', canRetry);
     icon.className = canRetry ? 'fa-solid fa-rotate' : 'fa-solid fa-paper-plane';
-    button.title = canRetry ? '답장 받기' : '보내기';
+    button.title = canRetry ? t("답장 받기") : t("보내기");
+    const request = overlay.querySelector('#ts-request');
+    if (request) request.disabled = isBusy() || !messages.length;
 }
 
 async function onSendButton() {
@@ -648,7 +807,7 @@ async function onSendButton() {
     if (input && !input.value.trim()) {
         const messages = getSession(S.activeSessionId)?.messages ?? [];
         const last = messages[messages.length - 1];
-        if (last && last.who === WHO.USER) {
+        if (!getSession(S.activeSessionId)?.bundleMode && last && (last.who === WHO.USER || last.kind)) {
             await requestReply({});
         }
         return;
@@ -659,7 +818,9 @@ async function onSendButton() {
 export function syncCommitButton() {
     const btn = S.sheetEl?.querySelector('#ts-commit');
     if (!btn) return;
-    const pending = getPendingMessages(getSession(S.activeSessionId));
-    btn.disabled = pending.length === 0;
-    btn.textContent = pending.length ? `반영 ${pending.length}` : '반영';
+    const session = getSession(S.activeSessionId);
+    if (!session) return;
+    const batch = getCommitBatch(session);
+    btn.disabled = isBusy() || !hasPendingChanges(session);
+    btn.textContent = batch.replacement ? t("반영 수정") : batch.messages.length ? `${t("반영")} ${batch.messages.length}` : t("반영");
 }

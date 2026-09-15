@@ -10,6 +10,8 @@ import {
     LANG,
     DEFAULT_BRIDGE_TURNS,
     DEFAULT_MAX_TOKENS,
+    SUMMARY_MAX_TOKENS,
+    TIME_ESTIMATE_MAX_TOKENS,
 } from './constants.js';
 
 const DEFAULTS = {
@@ -17,6 +19,8 @@ const DEFAULTS = {
     /** Connection profile id. Falls back to the current API when empty. */
     profileId: '',
     maxTokens: DEFAULT_MAX_TOKENS,
+    summaryMaxTokens: SUMMARY_MAX_TOKENS,
+    timeMaxTokens: TIME_ESTIMATE_MAX_TOKENS,
     /** Recent main-chat turns loaded via the bridge. 0 disables the bridge. */
     bridgeTurns: DEFAULT_BRIDGE_TURNS,
     typingEffect: true,
@@ -83,6 +87,9 @@ function num(key, min, max) {
 export function getMaxTokens() {
     return num('maxTokens', 200, 20000);
 }
+
+export function getSummaryMaxTokens() { return num('summaryMaxTokens', 500, 20000); }
+export function getTimeMaxTokens() { return num('timeMaxTokens', 200, 20000); }
 
 export function getBridgeTurns() {
     return num('bridgeTurns', 0, 20);

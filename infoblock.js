@@ -145,10 +145,13 @@ export function nextStamp(session, nowMs, { delayMinutes = null } = {}) {
     if (!prev) {
         applyAnchor(session, scene);
         const shift = Number(session?.timeShift) || 0;
-        return stampFrom(session, scene.minutes == null ? null : scene.minutes + shift);
+        return stampFrom(session, scene.minutes == null ? null : scene.minutes + shift + (delayMinutes ?? 0));
     }
 
     // An explicit reply delay wins; otherwise use clamped real elapsed time.
+    // Editing/deleting a later-day burst may expose a previous message with a different anchor.
+    session.anchorDate = messageAnchor(prev, session);
+    session.anchorDateRaw = prev.anchorDateRaw || prev.date || session.anchorDateRaw;
     const idleMs = nowMs - (prev.at ?? nowMs);
     const step = delayMinutes != null
         ? Math.max(0, Math.round(delayMinutes))
@@ -156,7 +159,8 @@ export function nextStamp(session, nowMs, { delayMinutes = null } = {}) {
     const stepped = prev.sceneMin + step;
 
     // After a long pause, re-anchor to the infoblock, but only if it moved forward.
-    if (delayMinutes == null && idleMs >= RESUME_AFTER_MS && scene.minutes != null) {
+    if (delayMinutes == null && (idleMs >= RESUME_AFTER_MS || session.resumeScene) && scene.minutes != null) {
+        session.resumeScene = false;
         const jumped = resumeTarget(session, scene, stepped);
         if (jumped != null) {
             applyAnchor(session, scene);
@@ -193,11 +197,19 @@ export function restampMessages(session, deltaMinutes) {
     if (!delta || !session?.messages?.length) return;
     for (const message of session.messages) {
         if (message?.sceneMin == null) continue;
+        const anchorDate = messageAnchor(message, session);
         message.sceneMin = Math.max(0, message.sceneMin + delta);
-        const stamp = stampFrom(session, message.sceneMin);
+        message.anchorDate = anchorDate;
+        const stamp = stampFrom({ anchorDate, anchorDateRaw: message.anchorDateRaw || message.date || session.anchorDateRaw }, message.sceneMin);
         message.clock = stamp.clock;
         message.date = stamp.date;
     }
+}
+
+function messageAnchor(message, session) {
+    if (message.anchorDate) return message.anchorDate;
+    const date = parseSceneDate(message.date);
+    return date ? parseSceneDate(formatSceneDate(date, -Math.floor((message.sceneMin || 0) / 1440))) : session.anchorDate;
 }
 
 export function sceneClockFor(session, message) {

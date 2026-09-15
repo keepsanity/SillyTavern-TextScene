@@ -1,3 +1,5 @@
+import { t } from './i18n.js';
+
 /** Slash command `/text` — opens the text scene sheet. */
 
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
@@ -15,12 +17,12 @@ export function registerSlashCommands() {
         aliases: ['textscene'],
         helpString: `
             <div>
-                문자 씬을 엽니다. [반영] 할 때 메시지 한 개만 메인 채팅에 들어갑니다.
+                ${t("문자 씬을 엽니다. [반영] 할 때 메시지 한 개만 메인 채팅에 들어갑니다.")}
             </div>
             <div>
-                <code>first=true</code> 를 주면 열자마자 상대가 먼저 문자를 보냅니다.
+                <code>first=true</code> ${t("를 주면 열자마자 상대가 먼저 문자를 보냅니다.")}
             </div>
-            <div><strong>예시:</strong></div>
+            <div><strong>${t("예시:")}</strong></div>
             <ul>
                 <li><pre><code class="language-stscript">/text</code></pre></li>
                 <li><pre><code class="language-stscript">/text first=true</code></pre></li>
@@ -29,7 +31,7 @@ export function registerSlashCommands() {
         namedArgumentList: [
             SlashCommandNamedArgument.fromProps({
                 name: 'first',
-                description: '상대가 먼저 문자를 보내며 시작',
+                description: t("상대가 먼저 문자를 보내며 시작"),
                 typeList: [ARGUMENT_TYPE.BOOLEAN],
                 defaultValue: 'false',
                 enumList: ['true', 'false'],

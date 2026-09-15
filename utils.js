@@ -1,3 +1,5 @@
+import { t as tr } from './i18n.js';
+
 // Pure helpers. Nothing DOM- or state-dependent.
 
 import {
@@ -29,7 +31,8 @@ export function extractReplyMarker(raw) {
     const match = text.match(REPLY_MARKER_REGEX);
     if (!match) return { kind: REPLY_KIND.REPLY, delayMinutes: null, text };
 
-    const [, none, digits, state] = match;
+    const [, none, digits, rawState] = match;
+    const state = rawState?.toLowerCase();
     const stripped = text.replace(match[0], '');
 
     if (none) return { kind: REPLY_KIND.NONE, delayMinutes: null, text: stripped };
@@ -86,7 +89,6 @@ function stripNarration(chunk) {
             const t = line.trim();
             if (!t) return true;
             if (/^\*[^*]+\*$/.test(t)) return false;
-            if (/^\([^)]+\)$/.test(t)) return false;
             return true;
         })
         .join('\n');
@@ -139,6 +141,38 @@ export function bindOverlayHeight(overlay) {
 export function truncate(text, n) {
     const t = String(text ?? '');
     return t.length > n ? t.slice(0, n) + '…' : t;
+}
+
+/** Keep both the setup and the most recent facts/infoblock of long RP messages. */
+export function excerpt(text, n) {
+    const t = String(text ?? '');
+    if (t.length <= n) return t;
+    const head = Math.floor((n - 20) * 0.35);
+    return `${t.slice(0, head)}\n${tr("[…중간 생략…]")}\n${t.slice(-(n - head - 20))}`;
+}
+
+/** Validate without silently discarding extra dialogue. */
+export function parseReply(raw) {
+    let parsed;
+    const source = String(raw ?? '').trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
+    if (source.startsWith('{')) {
+        let data;
+        try { data = JSON.parse(source); } catch { throw new Error(tr("응답 JSON을 읽을 수 없어요.")); }
+        if (!['reply', 'silent', 'unread', 'none'].includes(data.kind) || !Array.isArray(data.messages)
+            || data.messages.some(m => typeof m !== 'string')
+            || !Number.isInteger(data.delayMinutes) || data.delayMinutes < 0 || data.delayMinutes > REPLY_DELAY_MAX) {
+            throw new Error(tr("문자 응답 형식이나 시간이 올바르지 않아요."));
+        }
+        parsed = { kind: data.kind, delayMinutes: data.delayMinutes, bubbles: data.messages.map(m => m.trim()).filter(Boolean) };
+    } else {
+        const marker = extractReplyMarker(source);
+        parsed = { ...marker, bubbles: splitIntoBubbles(marker.text) };
+    }
+    if (parsed.bubbles.length > 3) throw new Error(tr("한 번에 3통을 넘는 답장이 왔어요. 원문을 확인하거나 다시 요청할 수 있어요."));
+    if (parsed.bubbles.some(b => b.length > 1000)) throw new Error(tr("문자치고 너무 긴 답장이 왔어요. 원문을 확인해 주세요."));
+    if (parsed.kind !== REPLY_KIND.REPLY && parsed.bubbles.length) throw new Error(tr("무응답 표시와 문자 내용이 함께 왔어요."));
+    if (parsed.bubbles.some(b => /\*[^*\n]+\*/.test(b))) throw new Error(tr("문자 안에 행동 서술이 섞여 있어요. 원문을 확인하거나 다시 요청해 주세요."));
+    return parsed;
 }
 
 /** navigator.clipboard is absent in insecure contexts (plain HTTP), hence the execCommand fallback. */
