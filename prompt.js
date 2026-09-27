@@ -19,7 +19,7 @@ import {
     META_KEY,
 } from './constants.js';
 import { getMessengerPrompt, getSummaryPrompt, getBridgeTurns } from './config.js';
-import { getEffectiveLanguage, getLanguageName } from './lang.js';
+import { detectChatLanguage, getEffectiveLanguage, getLanguageName } from './lang.js';
 import { truncate, excerpt } from './utils.js';
 
 /** The current character card. null for groups or when none is selected. */
@@ -111,12 +111,22 @@ Recent RP is author context, not information automatically known to {{char}}. {{
     if (catchup) systemParts.push(CATCHUP_INSTRUCTION);
     if (intent) systemParts.push(`<scene_direction>
 The user requests this direction: ${String(intent).slice(0, 800)}
-Move toward a natural stopping point in this reply rather than prolonging the exchange. Still output only {{char}}'s 1-3 texts and the reply marker. Do NOT write {{user}}'s replies, assume agreement, or invent completed plans. If a decision from {{user}} is needed, ask and stop. This direction overrides the earlier instruction to keep the exchange going, but not character knowledge or user agency.
+Move toward a natural stopping point in this reply rather than prolonging the exchange. Still output only {{char}}'s texts in the JSON messages array. Do NOT write {{user}}'s replies, assume agreement, or invent completed plans. If a decision from {{user}} is needed, ask and stop. This direction overrides the earlier instruction to keep the exchange going, but not character knowledge or user agency.
 </scene_direction>`);
 
     const log = sourceMessages ?? session?.messages ?? [];
     const continuity = buildContinuity(session, log);
     if (continuity) systemParts.push(continuity);
+
+    // Transport format is controlled by the extension, even with a saved custom prompt.
+    systemParts.push(`<response_format>
+Return exactly one valid JSON object, with no Markdown fences or surrounding prose:
+{"kind":"reply","delayMinutes":2,"messages":["first text","second text"]}
+kind must be reply, silent, unread, or none. delayMinutes must be an integer from 0 to 1440.
+For reply, messages must contain nonempty strings, one complete text per array item. For silent, unread, or none, use an empty messages array. Use none only for a catch-up check.
+Do not use --- or [+N] markers. Array items define separate bubbles; preserve normal spaces and punctuation within each message. Never concatenate separate texts into one string.
+This response format supersedes any earlier output-format examples, including those in a custom prompt. The wording inside each message still follows the character and the conversation language.
+</response_format>`);
 
     // Resolve macros here: the connection-profile path never applies substituteParams.
     const messages = [{ role: 'system', content: substituteParams(systemParts.join('\n\n')) }];
@@ -125,7 +135,9 @@ Move toward a natural stopping point in this reply rather than prolonging the ex
     for (const entry of window) {
         messages.push({
             role: entry.kind ? 'system' : entry.who === WHO.CHAR ? 'assistant' : 'user',
-            content: entry.kind ? formatLog(session, [entry]) : entry.text,
+            content: entry.kind ? formatLog(session, [entry]) : entry.who === WHO.CHAR
+                ? JSON.stringify({ kind: 'reply', delayMinutes: 0, messages: [entry.text] })
+                : entry.text,
         });
     }
 
@@ -138,7 +150,7 @@ Move toward a natural stopping point in this reply rather than prolonging the ex
     } else if (!window.length) {
         closing = '[Send the first text message now.]';
     } else if (catchup) {
-        closing = '[Did {{char}} text first in the meantime? Answer with the marker.]';
+        closing = '[Did {{char}} text first in the meantime? Answer with the JSON response object.]';
     } else if (window[window.length - 1]?.who === WHO.CHAR || window[window.length - 1]?.kind) {
         closing = '[Send the next text message now.]';
     }
@@ -207,8 +219,9 @@ export function buildTimeEstimateMessages() {
 
 /** On-demand refresh, kept editable and separate from the actual message transcript. */
 export function buildSceneContextMessages(session) {
+    const language = getLanguageName(detectChatLanguage());
     return [
-        { role: 'system', content: 'Extract a short continuity note in Korean, at most 6 short bullet points. This is data extraction, not RP. Record only established current circumstances, character-known facts, agreed plans, proposed but unconfirmed plans, and unresolved questions. Distinguish what the character knows from private author/user information. Do not turn hidden thoughts into shared facts. Label uncertain or inferred information explicitly. Do not invent details or intensify the relationship. Prefer newer explicit facts over outdated notes.' },
+        { role: 'system', content: `Extract a short continuity note in ${language}, at most 6 short bullet points. Use ${language} for the entire note, even if the previous note or UI uses another language. This is data extraction, not RP. Record only established current circumstances, character-known facts, agreed plans, proposed but unconfirmed plans, and unresolved questions. Distinguish what the character knows from private author/user information. Do not turn hidden thoughts into shared facts. Label uncertain or inferred information explicitly. Do not invent details or intensify the relationship. Prefer newer explicit facts over outdated notes.` },
         { role: 'user', content: `Character: ${getCharName()}\n<previous_note>\n${session.contextNote || ''}\n</previous_note>\n<recent_rp>\n${buildBridgeText(Math.max(3, getBridgeTurns()))}\n</recent_rp>\n<recent_texts>\n${formatLog(session, session.messages.slice(-40))}\n</recent_texts>` },
     ];
 }

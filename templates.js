@@ -56,7 +56,7 @@ export function buildSettingsHTML() {
 
                 <label for="ts-max-tokens">${t("답장 최대 토큰")}</label>
                 <input id="ts-max-tokens" class="text_pole" type="number" min="200" max="20000" step="500">
-                <small class="ts-note">${t("추론을 포함한 요청 상한입니다. 실제 문자 답장은 1~3통으로 검증합니다.")}</small>
+                <small class="ts-note">${t("추론을 포함한 요청 상한입니다. 답장은 보통 1~3통을 요청하며, 더 와도 모두 표시합니다.")}</small>
                 <label for="ts-summary-tokens">${t("요약 요청 최대 토큰")}</label>
                 <input id="ts-summary-tokens" class="text_pole" type="number" min="500" max="20000" step="500">
                 <label for="ts-time-tokens">${t("시간 추정 요청 최대 토큰")}</label>

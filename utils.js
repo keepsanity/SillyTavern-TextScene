@@ -3,7 +3,6 @@ import { t as tr } from './i18n.js';
 // Pure helpers. Nothing DOM- or state-dependent.
 
 import {
-    BUBBLE_SPLIT_REGEX,
     REPLY_MARKER_REGEX,
     REPLY_KIND,
     REPLY_DELAY_MAX,
@@ -50,38 +49,31 @@ export function extractReplyMarker(raw) {
     return { kind, delayMinutes: valid ? minutes : null, text: stripped };
 }
 
-/** Splits a model response into bubbles on whole-line `---` separators. */
+/** Treat three or more hyphens as the reply delimiter, including Markdown escapes. */
 export function splitIntoBubbles(raw) {
     const text = String(raw ?? '').trim();
     if (!text) return [];
 
+    // Models also emit hello---bye, hello ---bye, \--- and \-\-\-.
+    // Whitespace is not required by the delimiter. Preserve hyphens inside URLs.
     const chunks = [];
-    let current = [];
-    let sawSeparator = false;
-    for (const line of text.split('\n')) {
-        if (BUBBLE_SPLIT_REGEX.test(line)) {
-            sawSeparator = true;
-            chunks.push(current.join('\n'));
-            current = [];
-        } else {
-            current.push(line);
-        }
+    let start = 0;
+    const boundaries = /(?:https?:\/\/|www\.)[^\s<>]+|(?:\\*-){3,}/gi;
+    for (const match of text.matchAll(boundaries)) {
+        if (/^(?:https?:\/\/|www\.)/i.test(match[0])) continue;
+        chunks.push(text.slice(start, match.index));
+        start = match.index + match[0].length;
     }
-    chunks.push(current.join('\n'));
-
+    chunks.push(text.slice(start));
     // No separator used: fall back to blank lines as boundaries.
-    if (!sawSeparator && /\n\s*\n/.test(text)) {
-        return text.split(/\n\s*\n+/)
-            .map(chunk => stripNarration(chunk).trim())
-            .filter(Boolean);
-    }
+    if (chunks.length === 1) chunks.splice(0, 1, ...text.split(/\n\s*\n+/));
 
     return chunks
         .map(chunk => stripNarration(chunk).trim())
         .filter(Boolean);
 }
 
-/** Drops whole lines wrapped entirely in asterisks or parentheses. */
+/** Drops whole lines wrapped entirely in asterisks; keeps parenthetical texts. */
 function stripNarration(chunk) {
     return String(chunk)
         .split('\n')
@@ -163,12 +155,12 @@ export function parseReply(raw) {
             || !Number.isInteger(data.delayMinutes) || data.delayMinutes < 0 || data.delayMinutes > REPLY_DELAY_MAX) {
             throw new Error(tr("문자 응답 형식이나 시간이 올바르지 않아요."));
         }
-        parsed = { kind: data.kind, delayMinutes: data.delayMinutes, bubbles: data.messages.map(m => m.trim()).filter(Boolean) };
+        parsed = { kind: data.kind, delayMinutes: data.delayMinutes, bubbles: data.messages.map(message => message.trim()).filter(Boolean) };
     } else {
         const marker = extractReplyMarker(source);
         parsed = { ...marker, bubbles: splitIntoBubbles(marker.text) };
     }
-    if (parsed.bubbles.length > 3) throw new Error(tr("한 번에 3통을 넘는 답장이 왔어요. 원문을 확인하거나 다시 요청할 수 있어요."));
+    // 1–3 bubbles is a prompt preference, not a reason to reject valid dialogue.
     if (parsed.bubbles.some(b => b.length > 1000)) throw new Error(tr("문자치고 너무 긴 답장이 왔어요. 원문을 확인해 주세요."));
     if (parsed.kind !== REPLY_KIND.REPLY && parsed.bubbles.length) throw new Error(tr("무응답 표시와 문자 내용이 함께 왔어요."));
     if (parsed.bubbles.some(b => /\*[^*\n]+\*/.test(b))) throw new Error(tr("문자 안에 행동 서술이 섞여 있어요. 원문을 확인하거나 다시 요청해 주세요."));
